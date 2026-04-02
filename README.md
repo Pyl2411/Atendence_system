@@ -46,7 +46,7 @@ cd "C:\attendence system"
 .\start_streamlit.ps1
 ```
 
-The Streamlit app is in [streamlit_app.py](./streamlit_app.py).
+The Streamlit app is in [streamlit_app.py](./streamlit_app.py) and the Streamlit Cloud entrypoint is [app.py](./app.py).
 For a public hosted app, Streamlit is often the simplest path because it gives you a shareable link and a built-in browser UI.
 If the host does not provide OpenCV, the app still starts in simple mode so the link works, and you can mark attendance manually from the browser.
 Streamlit Cloud should use the cloud-safe [requirements.txt](./requirements.txt). If you want the OpenCV desktop path on your PC, use [requirements-desktop.txt](./requirements-desktop.txt).

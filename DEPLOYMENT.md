@@ -82,7 +82,7 @@ Option A: Streamlit Community Cloud
 
 1. Push this repo to GitHub.
 2. Go to Streamlit Community Cloud and create a new app.
-3. Set the main file to `streamlit_app.py`.
+3. Set the main file to `app.py`.
 4. Make sure Streamlit uses the cloud-safe `requirements.txt` in the repo root.
 5. Deploy and share the HTTPS URL Streamlit gives you.
 
