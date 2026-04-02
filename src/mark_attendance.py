@@ -4,8 +4,12 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-import cv2
 import requests
+
+try:
+    import cv2
+except ImportError:  # pragma: no cover - optional in Streamlit Cloud
+    cv2 = None
 
 
 def get_app_root():
@@ -36,7 +40,17 @@ ATTENDANCE_COLUMNS = [
 ]
 
 
+def require_cv2():
+    if cv2 is None:
+        raise RuntimeError(
+            "OpenCV is not available in this environment. "
+            "Face recognition attendance requires a local machine or a server with OpenCV installed."
+        )
+    return cv2
+
+
 def load_assets():
+    require_cv2()
     if not MODEL_FILE.exists() or not LABELS_FILE.exists():
         raise FileNotFoundError("Model or labels missing. Run train_model.py first.")
 
@@ -110,6 +124,7 @@ def write_rows(file_path, rows):
 
 
 def show_status_and_exit(frame, message):
+    require_cv2()
     info_frame = frame.copy()
     cv2.putText(
         info_frame,
@@ -125,11 +140,13 @@ def show_status_and_exit(frame, message):
 
 
 def preprocess_face(face_roi):
+    require_cv2()
     resized = cv2.resize(face_roi, (200, 200))
     return cv2.equalizeHist(resized)
 
 
 def start_attendance():
+    require_cv2()
     recognizer, labels = load_assets()
     ATTENDANCE_DIR.mkdir(parents=True, exist_ok=True)
 

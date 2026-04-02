@@ -4,7 +4,10 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-import cv2
+try:
+    import cv2
+except ImportError:  # pragma: no cover - optional in Streamlit Cloud
+    cv2 = None
 
 
 def get_app_root():
@@ -16,6 +19,15 @@ def get_app_root():
 ROOT_DIR = get_app_root()
 DEFAULT_SAMPLES = 5
 DEFAULT_CAMERA_INDEX = 0
+
+
+def require_cv2():
+    if cv2 is None:
+        raise RuntimeError(
+            "OpenCV is not available in this environment. "
+            "Use the local desktop app, or deploy the app on a host that supports opencv-contrib-python."
+        )
+    return cv2
 
 
 def parse_args():
@@ -114,6 +126,7 @@ def capture_employee(
     samples=DEFAULT_SAMPLES,
     camera_index=DEFAULT_CAMERA_INDEX,
 ):
+    require_cv2()
     name = (name or "").strip()
     mobile = sanitize_mobile(mobile or "")
     employee_id = (employee_id or "").strip()

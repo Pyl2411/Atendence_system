@@ -3,8 +3,12 @@ import csv
 import sys
 from pathlib import Path
 
-import cv2
 import numpy as np
+
+try:
+    import cv2
+except ImportError:  # pragma: no cover - optional in Streamlit Cloud
+    cv2 = None
 
 
 def get_app_root():
@@ -22,7 +26,17 @@ MIN_IMAGES_PER_PERSON = 5
 EMPLOYEES_FILE = DATA_DIR / "employees.csv"
 
 
+def require_cv2():
+    if cv2 is None:
+        raise RuntimeError(
+            "OpenCV is not available in this environment. "
+            "Training requires a local machine or a server with OpenCV installed."
+        )
+    return cv2
+
+
 def preprocess_face(img):
+    require_cv2()
     resized = cv2.resize(img, (200, 200))
     return cv2.equalizeHist(resized)
 
@@ -41,6 +55,7 @@ def load_employee_lookup():
 
 
 def train_faces():
+    require_cv2()
     if not DATA_DIR.exists():
         raise FileNotFoundError("No data folder found. Run capture_faces.py first.")
 
@@ -74,6 +89,7 @@ def label_display_name(folder_name, employee_lookup):
 
 
 def load_training_data():
+    require_cv2()
     images = []
     labels = []
     label_map = {}

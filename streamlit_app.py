@@ -1,11 +1,17 @@
+import io
 import csv
 import json
 from datetime import datetime
 from pathlib import Path
 
-import cv2
 import numpy as np
 import streamlit as st
+from PIL import Image
+
+try:
+    import cv2
+except ImportError:  # pragma: no cover - optional in Streamlit Cloud
+    cv2 = None
 
 from src.capture_faces import append_capture_log, sanitize_mobile, sanitize_name, upsert_employee
 from src.data_store import ATTENDANCE_DIR, DATA_DIR, ROOT_DIR, load_attendance_records, load_employees
@@ -16,14 +22,19 @@ from src.train_model import LABELS_FILE, MODEL_FILE, MODELS_DIR, load_training_d
 APP_TITLE = "Attendance Web App"
 DEFAULT_COMPANY_NAME = "Vickhardth Automation"
 ROLES = ["Manager", "Co Founder", "Employee", "Team Leader", "Trainee"]
+CV2_AVAILABLE = cv2 is not None
 
 
 def preprocess_face(img):
+    if cv2 is None:
+        raise RuntimeError("OpenCV is not available in this environment.")
     resized = cv2.resize(img, (200, 200))
     return cv2.equalizeHist(resized)
 
 
 def largest_face(gray_image):
+    if cv2 is None:
+        raise RuntimeError("OpenCV is not available in this environment.")
     face_cascade = cv2.CascadeClassifier(
         cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
     )
@@ -34,6 +45,8 @@ def largest_face(gray_image):
 
 
 def decode_image_bytes(raw_bytes):
+    if cv2 is None:
+        raise RuntimeError("OpenCV is not available in this environment.")
     image = cv2.imdecode(np.frombuffer(raw_bytes, np.uint8), cv2.IMREAD_COLOR)
     if image is None:
         raise ValueError("Invalid image data")
@@ -41,6 +54,8 @@ def decode_image_bytes(raw_bytes):
 
 
 def load_recognizer():
+    if cv2 is None:
+        raise RuntimeError("OpenCV is not available in this environment.")
     if not MODEL_FILE.exists() or not LABELS_FILE.exists():
         raise FileNotFoundError("Model not trained yet. Train the model first.")
 
@@ -49,6 +64,11 @@ def load_recognizer():
     with LABELS_FILE.open("r", encoding="utf-8") as f:
         labels = {int(k): v for k, v in json.load(f).items()}
     return recognizer, labels
+
+
+def save_image_bytes(raw_bytes, file_path):
+    image = Image.open(io.BytesIO(raw_bytes))
+    image.convert("RGB").save(file_path, format="JPEG", quality=95)
 
 
 def save_sample_images(name, mobile, uploads):
@@ -61,19 +81,28 @@ def save_sample_images(name, mobile, uploads):
         raw = upload.getvalue()
         if not raw:
             continue
-        image = decode_image_bytes(raw)
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        face = largest_face(gray)
-        face_roi = gray if face is None else gray[face[1] : face[1] + face[3], face[0] : face[0] + face[2]]
-        processed = preprocess_face(face_roi)
         file_path = person_dir / f"{folder_name}_{saved:03d}.jpg"
-        cv2.imwrite(str(file_path), processed)
+        if CV2_AVAILABLE:
+            image = decode_image_bytes(raw)
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            face = largest_face(gray)
+            face_roi = (
+                gray
+                if face is None
+                else gray[face[1] : face[1] + face[3], face[0] : face[0] + face[2]]
+            )
+            processed = preprocess_face(face_roi)
+            cv2.imwrite(str(file_path), processed)
+        else:
+            save_image_bytes(raw, file_path)
         saved += 1
 
     return saved
 
 
 def recognize_from_bytes(raw_bytes):
+    if cv2 is None:
+        raise RuntimeError("OpenCV is not available in this environment.")
     recognizer, labels = load_recognizer()
     image = decode_image_bytes(raw_bytes)
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -189,10 +218,16 @@ ensure_state()
 
 st.title("Attendance Web App")
 st.caption("Open this link on mobile or desktop. No install needed.")
-st.info(
-    "For browser camera access on a public link, the site should run over HTTPS. "
-    "On localhost, camera access works without HTTPS."
-)
+if CV2_AVAILABLE:
+    st.info(
+        "For browser camera access on a public link, the site should run over HTTPS. "
+        "On localhost, camera access works without HTTPS."
+    )
+else:
+    st.warning(
+        "OpenCV is not available on this host, so the app is running in simple mode. "
+        "You can still register employees and mark attendance manually from the browser link."
+    )
 
 with st.sidebar:
     st.header("Server")
@@ -208,6 +243,8 @@ with st.sidebar:
         index=0 if st.session_state.camera_mode == "environment" else 1,
         label_visibility="collapsed",
     )
+    if not CV2_AVAILABLE:
+        st.caption("Camera mode is kept for future compatibility, but recognition is manual in this deployment.")
 
 render_stats()
 
@@ -215,7 +252,13 @@ col_backend, col_camera = st.columns([1, 1])
 
 with col_backend:
     st.subheader("Train and data")
-    if st.button("Train Model", type="primary", use_container_width=True):
+    if st.button(
+        "Train Model",
+        type="primary",
+        use_container_width=True,
+        disabled=not CV2_AVAILABLE,
+        help="OpenCV is required for model training on this app host.",
+    ):
         try:
             train_faces()
             st.session_state.status = "Model trained"
@@ -223,6 +266,8 @@ with col_backend:
         except Exception as exc:
             st.session_state.status = "Train failed"
             st.error(str(exc))
+    if not CV2_AVAILABLE:
+        st.caption("Training is disabled in Streamlit Cloud simple mode.")
 
     st.subheader("Register employee")
     name = st.text_input("Name", key="employee_name")
@@ -273,42 +318,64 @@ with col_backend:
 
 with col_camera:
     st.subheader("Mark attendance")
-    attendance_photo = st.camera_input("Capture attendance photo", key="attendance_camera")
-    uploaded_attendance = st.file_uploader(
-        "Or upload attendance photo",
-        type=["png", "jpg", "jpeg"],
-        accept_multiple_files=False,
-        key="attendance_upload",
-    )
+    if CV2_AVAILABLE:
+        attendance_photo = st.camera_input("Capture attendance photo", key="attendance_camera")
+        uploaded_attendance = st.file_uploader(
+            "Or upload attendance photo",
+            type=["png", "jpg", "jpeg"],
+            accept_multiple_files=False,
+            key="attendance_upload",
+        )
 
-    if attendance_photo and st.button("Use camera photo", use_container_width=True, key="use_camera_photo"):
-        set_attendance_image(attendance_photo)
+        if attendance_photo and st.button("Use camera photo", use_container_width=True, key="use_camera_photo"):
+            set_attendance_image(attendance_photo)
 
-    if uploaded_attendance and st.button("Use uploaded photo", use_container_width=True, key="use_uploaded_photo"):
-        set_attendance_image(uploaded_attendance)
+        if uploaded_attendance and st.button("Use uploaded photo", use_container_width=True, key="use_uploaded_photo"):
+            set_attendance_image(uploaded_attendance)
 
-    if st.session_state.attendance_image is not None:
-        st.image(st.session_state.attendance_image, width=220)
-        if st.button("Mark Attendance", type="primary", use_container_width=True, key="mark_attendance"):
-            try:
-                raw = st.session_state.attendance_image.getvalue()
-                name, confidence = recognize_from_bytes(raw)
-                if name == "unknown":
-                    st.warning(f"Face not recognized. Confidence: {confidence:.1f}")
-                else:
+        if st.session_state.attendance_image is not None:
+            st.image(st.session_state.attendance_image, width=220)
+            if st.button("Mark Attendance", type="primary", use_container_width=True, key="mark_attendance"):
+                try:
+                    raw = st.session_state.attendance_image.getvalue()
+                    name, confidence = recognize_from_bytes(raw)
+                    if name == "unknown":
+                        st.warning(f"Face not recognized. Confidence: {confidence:.1f}")
+                    else:
+                        today_file = ATTENDANCE_DIR / f"attendance_{datetime.now().strftime('%Y%m%d')}.csv"
+                        today_file.parent.mkdir(parents=True, exist_ok=True)
+                        if not today_file.exists():
+                            with today_file.open("w", newline="", encoding="utf-8") as f:
+                                writer = csv.writer(f)
+                                writer.writerow(ATTENDANCE_COLUMNS)
+                        message, marked = mark_attendance(name, today_file)
+                        st.session_state.status = "Attendance marked" if marked else "Attendance blocked"
+                        st.success(message)
+                        clear_attendance()
+                except Exception as exc:
+                    st.session_state.status = "Attendance failed"
+                    st.error(str(exc))
+    else:
+        employees = load_employees()
+        employee_names = sorted({row.get("Name", "").strip() for row in employees if row.get("Name", "").strip()})
+        if employee_names:
+            selected_name = st.selectbox("Select employee", employee_names, key="manual_attendance_name")
+            if st.button("Mark Attendance Manually", type="primary", use_container_width=True, key="manual_mark_attendance"):
+                try:
                     today_file = ATTENDANCE_DIR / f"attendance_{datetime.now().strftime('%Y%m%d')}.csv"
                     today_file.parent.mkdir(parents=True, exist_ok=True)
                     if not today_file.exists():
                         with today_file.open("w", newline="", encoding="utf-8") as f:
                             writer = csv.writer(f)
                             writer.writerow(ATTENDANCE_COLUMNS)
-                    message, marked = mark_attendance(name, today_file)
+                    message, marked = mark_attendance(selected_name, today_file)
                     st.session_state.status = "Attendance marked" if marked else "Attendance blocked"
                     st.success(message)
-                    clear_attendance()
-            except Exception as exc:
-                st.session_state.status = "Attendance failed"
-                st.error(str(exc))
+                except Exception as exc:
+                    st.session_state.status = "Attendance failed"
+                    st.error(str(exc))
+        else:
+            st.info("Add employees first to use manual attendance mode.")
 
 st.divider()
 left, right = st.columns(2)
