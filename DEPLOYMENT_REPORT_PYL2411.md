@@ -13,7 +13,8 @@ Recommended Streamlit Cloud settings:
 Notes:
 
 - `app.py` is the entrypoint for Streamlit Cloud.
-- `streamlit_app.py` contains the app logic.
+- `app.py` is a cloud-safe attendance dashboard with manual register/mark flows.
+- `streamlit_app.py` keeps the desktop/OpenCV version.
 - `requirements.txt` is the cloud-safe dependency file.
 - `requirements-desktop.txt` is for local OpenCV use on PC.
 
