@@ -9,3 +9,11 @@ __pycache__/
 dist/
 build/
 *.spec
+.devcontainer/
+.pycache_check/
+android-app/
+deploy_build/
+deploy_build2/
+deploy_dist/
+deploy_dist2/
+tmp/
