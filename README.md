@@ -1,6 +1,7 @@
 # Face Recognition Attendance System
 
 This project now works as a browser-based app so everyone can use it from mobile or desktop with one link.
+It can also capture the employee device's browser GPS location during attendance when the user allows location permission.
 
 ## Quick Start
 
@@ -50,6 +51,7 @@ The Streamlit app is in [streamlit_app.py](./streamlit_app.py) and the Streamlit
 For a public hosted app, Streamlit is often the simplest path because it gives you a shareable link and a built-in browser UI.
 If the host does not provide OpenCV, the app still starts in simple mode so the link works, and you can mark attendance manually from the browser.
 Streamlit Cloud should use the cloud-safe [requirements.txt](./requirements.txt). If you want the OpenCV desktop path on your PC, use [requirements-desktop.txt](./requirements-desktop.txt).
+On mobile, users should press the location button before marking attendance so the app stores their phone GPS coordinates instead of only the server location.
 
 ## Desktop GUI
 
@@ -132,6 +134,7 @@ For browser camera access on a public link, deploy with HTTPS or behind an HTTPS
 
 For Streamlit deployment, use HTTPS as well if you want camera access to work reliably on phones.
 If Streamlit Cloud cannot use OpenCV on its default Python version, the app falls back to a simpler browser mode instead of crashing.
+Browser GPS capture also needs the user to allow location permission in the phone browser.
 
 ## Android app
 

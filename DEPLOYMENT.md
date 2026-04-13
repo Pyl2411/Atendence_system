@@ -97,8 +97,9 @@ Option B: Your own server
 Notes:
 
 - Streamlit camera input works best over HTTPS.
+- Phone GPS capture also works best over HTTPS and requires the user to allow browser location permission.
 - The app still stores employee, attendance, and model files under the project folders.
-- If you use Streamlit Cloud or another hosted service, make sure file storage is persistent enough for your attendance records.
+- If you use Streamlit Cloud or another hosted service, make sure file storage is persistent enough for your attendance records. Streamlit Community Cloud is good for demo/public access, but long-term production attendance data is better on your own VM/server or an attached database/storage service.
 
 ## What users get
 

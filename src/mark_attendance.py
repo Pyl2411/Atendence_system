@@ -87,6 +87,13 @@ def get_current_location():
         return "Unknown", "", ""
 
 
+def normalize_location_details(location=None, lat=None, lon=None):
+    normalized_location = (location or "").strip() or "Unknown"
+    normalized_lat = "" if lat is None else str(lat).strip()
+    normalized_lon = "" if lon is None else str(lon).strip()
+    return normalized_location, normalized_lat, normalized_lon
+
+
 def read_rows(file_path):
     rows = []
     if not file_path.exists():
@@ -219,12 +226,15 @@ def start_attendance():
         cv2.destroyAllWindows()
 
 
-def mark_attendance(name, file_path):
+def mark_attendance(name, file_path, location=None, lat=None, lon=None):
     rows = read_rows(file_path)
     now = datetime.now()
     today = now.strftime("%Y-%m-%d")
     now_time = now.strftime("%H:%M:%S")
-    location, lat, lon = get_current_location()
+    if any(value is not None for value in (location, lat, lon)):
+        location, lat, lon = normalize_location_details(location, lat, lon)
+    else:
+        location, lat, lon = get_current_location()
 
     # Single row per employee per day: first recognition is CheckIn, second is CheckOut.
     for row in rows:

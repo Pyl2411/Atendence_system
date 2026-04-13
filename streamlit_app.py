@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import streamlit as st
 from PIL import Image
+from streamlit.components.v1 import html
 
 try:
     import cv2
@@ -155,6 +156,103 @@ def clear_attendance():
     st.session_state.attendance_image = None
 
 
+def render_location_capture(component_key):
+    storage_key = f"attendance-location-{component_key}"
+    payload = html(
+        f"""
+        <div style="border:1px solid rgba(128,128,128,.25);border-radius:12px;padding:12px;background:rgba(250,250,250,.02);">
+          <div style="font-family:sans-serif;font-size:14px;margin-bottom:8px;">
+            Capture current phone location for attendance
+          </div>
+          <button id="loc-btn" style="width:100%;padding:10px 12px;border:none;border-radius:10px;background:#0e7490;color:white;font-weight:600;cursor:pointer;">
+            Capture current location
+          </button>
+          <div id="loc-status" style="font-family:sans-serif;font-size:13px;margin-top:8px;color:#475569;">
+            Waiting for location permission.
+          </div>
+        </div>
+        <script>
+          const storageKey = {storage_key!r};
+          const statusEl = document.getElementById("loc-status");
+          const sendValue = (value) => {{
+            window.parent.postMessage({{
+              isStreamlitMessage: true,
+              type: "streamlit:setComponentValue",
+              value
+            }}, "*");
+          }};
+          const setHeight = () => {{
+            window.parent.postMessage({{
+              isStreamlitMessage: true,
+              type: "streamlit:setFrameHeight",
+              height: document.body.scrollHeight + 16
+            }}, "*");
+          }};
+          const setStatus = (message) => {{
+            statusEl.textContent = message;
+            setHeight();
+          }};
+          const cached = window.localStorage.getItem(storageKey);
+          if (cached) {{
+            try {{
+              const parsed = JSON.parse(cached);
+              setStatus("Using last captured location.");
+              sendValue(parsed);
+            }} catch (error) {{
+              window.localStorage.removeItem(storageKey);
+            }}
+          }} else {{
+            sendValue({{ status: "idle" }});
+          }}
+          document.getElementById("loc-btn").addEventListener("click", () => {{
+            if (!navigator.geolocation) {{
+              const value = {{ status: "unsupported", message: "Geolocation is not supported in this browser." }};
+              window.localStorage.setItem(storageKey, JSON.stringify(value));
+              setStatus(value.message);
+              sendValue(value);
+              return;
+            }}
+            setStatus("Requesting current location...");
+            navigator.geolocation.getCurrentPosition(
+              (position) => {{
+                const coords = position.coords;
+                const value = {{
+                  status: "success",
+                  lat: coords.latitude,
+                  lon: coords.longitude,
+                  accuracy: coords.accuracy,
+                  captured_at: new Date().toISOString(),
+                  message: "Location captured from this device."
+                }};
+                window.localStorage.setItem(storageKey, JSON.stringify(value));
+                setStatus(`Location captured. Accuracy about ${{Math.round(coords.accuracy)}} meters.`);
+                sendValue(value);
+              }},
+              (error) => {{
+                const value = {{
+                  status: "error",
+                  message: error.message || "Unable to read location from this device."
+                }};
+                window.localStorage.setItem(storageKey, JSON.stringify(value));
+                setStatus(value.message);
+                sendValue(value);
+              }},
+              {{
+                enableHighAccuracy: true,
+                timeout: 15000,
+                maximumAge: 0
+              }}
+            );
+          }});
+          window.addEventListener("load", setHeight);
+          setHeight();
+        </script>
+        """,
+        height=140,
+    )
+    return payload if isinstance(payload, dict) else {}
+
+
 def render_stats():
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -211,6 +309,22 @@ def render_attendance_list():
             f"OUT {row.get('CheckOut', '')} | Hours {row.get('WorkHours', '') or '-'}"
         )
         st.divider()
+
+
+def attendance_location_fields(location_payload):
+    if not isinstance(location_payload, dict):
+        return "Unknown", "", ""
+    if location_payload.get("status") != "success":
+        return "Unknown", "", ""
+    lat = location_payload.get("lat")
+    lon = location_payload.get("lon")
+    accuracy = location_payload.get("accuracy")
+    label = "Browser GPS"
+    if accuracy not in (None, ""):
+        label = f"{label} (+/- {float(accuracy):.0f} m)"
+    lat_value = f"{float(lat):.6f}" if lat not in (None, "") else ""
+    lon_value = f"{float(lon):.6f}" if lon not in (None, "") else ""
+    return label, lat_value, lon_value
 
 
 st.set_page_config(page_title=APP_TITLE, page_icon="camera", layout="wide")
@@ -318,6 +432,19 @@ with col_backend:
 
 with col_camera:
     st.subheader("Mark attendance")
+    location_payload = render_location_capture("attendance")
+    if isinstance(location_payload, dict):
+        if location_payload.get("status") == "success":
+            st.caption(
+                "Location ready: "
+                f"{float(location_payload.get('lat')):.6f}, "
+                f"{float(location_payload.get('lon')):.6f}"
+            )
+        elif location_payload.get("status") == "error":
+            st.caption(f"Location not captured: {location_payload.get('message', 'Permission denied.')}")
+        elif location_payload.get("status") == "unsupported":
+            st.caption("This browser does not support GPS capture.")
+
     if CV2_AVAILABLE:
         attendance_photo = st.camera_input("Capture attendance photo", key="attendance_camera")
         uploaded_attendance = st.file_uploader(
@@ -348,7 +475,8 @@ with col_camera:
                             with today_file.open("w", newline="", encoding="utf-8") as f:
                                 writer = csv.writer(f)
                                 writer.writerow(ATTENDANCE_COLUMNS)
-                        message, marked = mark_attendance(name, today_file)
+                        location_name, lat, lon = attendance_location_fields(location_payload)
+                        message, marked = mark_attendance(name, today_file, location_name, lat, lon)
                         st.session_state.status = "Attendance marked" if marked else "Attendance blocked"
                         st.success(message)
                         clear_attendance()
