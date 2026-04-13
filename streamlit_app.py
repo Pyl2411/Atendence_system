@@ -23,6 +23,7 @@ from src.train_model import LABELS_FILE, MODEL_FILE, MODELS_DIR, load_training_d
 APP_TITLE = "Attendance Web App"
 DEFAULT_COMPANY_NAME = "Vickhardth Automation"
 ROLES = ["Manager", "Co Founder", "Employee", "Team Leader", "Trainee"]
+ADMIN_ROLES = {"Manager", "Co Founder"}
 CV2_AVAILABLE = cv2 is not None
 
 
@@ -126,10 +127,19 @@ def ensure_state():
         "attendance_image": None,
         "status": "Ready",
         "camera_mode": "environment",
+        "attendance_mode": False,
+        "log_lines": [],
+        "viewer_role": ROLES[0],
+        "viewer_query": "",
+        "sample_target": 5,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
+
+
+def log(message):
+    st.session_state.log_lines.append(message)
 
 
 def add_sample(capture):
@@ -253,85 +263,291 @@ def render_location_capture(component_key):
     return payload if isinstance(payload, dict) else {}
 
 
-def render_stats():
-    col1, col2, col3 = st.columns(3)
+def get_visible_data(role, query, employees, attendance):
+    visible_employees = employees
+    visible_attendance = attendance
+    if role not in ADMIN_ROLES:
+        if query:
+            visible_employees = [row for row in employees if _matches_query(row, query)]
+            visible_attendance = [row for row in attendance if _matches_query(row, query)]
+        else:
+            visible_employees = []
+            visible_attendance = []
+
+    access_scope = "Full access" if role in ADMIN_ROLES else "Filtered access"
+    if role in ADMIN_ROLES:
+        hint = "Manager and Co Founder can see every employee row and every attendance entry."
+    elif query:
+        hint = "Filtered personal view. Search by name, mobile, or employee ID to show your record."
+    else:
+        hint = "Enter your name, mobile, or employee ID to see your record."
+
+    return visible_employees, visible_attendance, access_scope, hint
+
+
+def render_data_frame(rows, columns):
+    if not rows:
+        st.info("No rows to show.")
+        return
+
+    table = [{column: row.get(column, "") for column in columns} for row in rows]
+    st.dataframe(table, use_container_width=True)
+
+
+def render_dashboard_tab():
+    st.subheader("Dashboard")
+    st.write("Role-aware viewing for employees and attendance records.")
+
+    col1, col2, col3 = st.columns([2, 3, 1])
     with col1:
-        st.metric("Employees", len(load_employees()))
+        st.selectbox("Viewer role", ROLES, key="viewer_role")
     with col2:
-        st.metric("Attendance rows", len(load_attendance_records()))
+        st.text_input("Search employee", key="viewer_query")
     with col3:
-        st.metric("Status", st.session_state.status)
+        if st.button("Refresh", use_container_width=True, key="dashboard_refresh"):
+            st.experimental_rerun()
 
-
-def register_employee(name, mobile, employee_id, role, company_name, logo_path, samples):
-    if not name.strip():
-        raise ValueError("Employee name is required.")
-    if len(sanitize_mobile(mobile)) < 10:
-        raise ValueError("Valid mobile number is required.")
-    if not employee_id.strip():
-        raise ValueError("Employee ID is required.")
-    if not role.strip():
-        raise ValueError("Role is required.")
-    if not company_name.strip():
-        raise ValueError("Company name is required.")
-    if not samples:
-        raise ValueError("Capture at least one sample photo first.")
-
-    upsert_employee(name, sanitize_mobile(mobile), employee_id, role, company_name, logo_path)
-    saved = save_sample_images(name, mobile, samples)
-    append_capture_log(name, sanitize_mobile(mobile), f"{sanitize_name(name)}_{sanitize_mobile(mobile)}", saved)
-    return saved
-
-
-def render_employee_list():
     employees = load_employees()
-    if not employees:
-        st.info("No employees yet.")
-        return
-    for row in employees:
-        st.write(f"**{row.get('Name', '')}**")
-        st.caption(
-            f"{row.get('EmployeeID', '')} | {row.get('Role', '')} | "
-            f"{row.get('Mobile', '')} | {row.get('CompanyName', '')}"
-        )
-        st.divider()
-
-
-def render_attendance_list():
     attendance = load_attendance_records()
-    if not attendance:
-        st.info("No attendance rows yet.")
-        return
-    for row in attendance:
-        st.write(f"**{row.get('Name', '')}**")
-        st.caption(
-            f"{row.get('Date', '')} | IN {row.get('CheckIn', '')} | "
-            f"OUT {row.get('CheckOut', '')} | Hours {row.get('WorkHours', '') or '-'}"
+    visible_employees, visible_attendance, access_scope, hint = get_visible_data(
+        st.session_state.viewer_role,
+        st.session_state.viewer_query,
+        employees,
+        attendance,
+    )
+
+    stats_col1, stats_col2, stats_col3 = st.columns(3)
+    with stats_col1:
+        st.metric("Employees in view", len(visible_employees))
+    with stats_col2:
+        st.metric("Attendance rows", len(visible_attendance))
+    with stats_col3:
+        st.metric("Total employees", len(employees))
+
+    st.info(f"Current access: {access_scope}. {hint}")
+
+    st.markdown("#### Employees")
+    render_data_frame(visible_employees, ["Name", "Mobile", "EmployeeID", "Role", "CompanyName"])
+
+    st.markdown("#### Attendance")
+    render_data_frame(visible_attendance, ["Date", "Name", "CheckIn", "CheckOut", "WorkHours", "SourceFile"])
+
+
+def render_activity_tab():
+    st.subheader("System Activity")
+    if st.button("Clear activity log", use_container_width=True, key="clear_activity"):
+        st.session_state.log_lines = []
+
+    if st.session_state.log_lines:
+        st.text_area(
+            "Activity log",
+            value="\n".join(st.session_state.log_lines),
+            height=420,
+            disabled=True,
         )
+    else:
+        st.info(
+            "Ready. Use Register to enroll people, Dashboard to review data, and Activity to watch command output."
+        )
+
+
+def render_register_tab():
+    st.subheader("Employee Registration")
+
+    left, right = st.columns([2, 1])
+    with left:
+        name = st.text_input("Employee Name", key="employee_name")
+        mobile = st.text_input("Mobile Number", key="employee_mobile")
+        employee_id = st.text_input("Employee ID", key="employee_id")
+        role = st.selectbox("Role", ROLES, index=ROLES.index(st.session_state.get("employee_role", ROLES[2])), key="employee_role")
+        company_name = st.text_input("Company Name", value=DEFAULT_COMPANY_NAME, key="company_name")
+        logo_path = st.text_input("Logo Path", key="logo_path")
+        sample_target = st.number_input(
+            "Face Samples",
+            min_value=1,
+            max_value=20,
+            value=st.session_state.sample_target,
+            key="sample_target",
+        )
+
+        button_row = st.columns([1, 1, 1])
+        if button_row[0].button("Register & Capture", type="primary", use_container_width=True, key="register_capture"):
+            try:
+                if len(st.session_state.samples) < sample_target:
+                    raise ValueError(
+                        f"Please capture at least {sample_target} sample photo(s) before registering."
+                    )
+                saved = register_employee(
+                    name,
+                    mobile,
+                    employee_id,
+                    role,
+                    company_name,
+                    logo_path,
+                    st.session_state.samples,
+                )
+                st.session_state.status = "Employee registered"
+                st.success(f"Registered employee and saved {saved} sample(s).")
+                log(f"Registered employee: {name} ({mobile})")
+                clear_samples()
+            except Exception as exc:
+                st.session_state.status = "Register failed"
+                st.error(str(exc))
+                log(f"Register failed: {exc}")
+
+        if button_row[1].button("Train Model", use_container_width=True, key="register_train"):
+            try:
+                with st.spinner("Training model..."):
+                    train_faces()
+                st.session_state.status = "Model trained"
+                st.success("Model trained successfully.")
+                log("Model trained successfully.")
+            except Exception as exc:
+                st.session_state.status = "Train failed"
+                st.error(str(exc))
+                log(f"Training failed: {exc}")
+
+        if button_row[2].button("Start Attendance", use_container_width=True, key="register_attendance"):
+            st.session_state.attendance_mode = True
+            st.experimental_rerun()
+
+        st.markdown(
+            """
+            1. Register an employee once with name, mobile, employee ID, and role.
+            2. Capture face samples from the webcam or upload sample photos.
+            3. Train the model.
+            4. Start attendance to mark IN/OUT.
+
+            Manager and Co Founder can view every employee and every attendance record from the Dashboard tab. Other roles can filter to their own record.
+            """
+        )
+
+    with right:
+        st.subheader("Face samples")
+        sample_photo = st.camera_input("Capture sample photo", key="sample_camera")
+        extra_uploads = st.file_uploader(
+            "Or add more sample photos",
+            type=["png", "jpg", "jpeg"],
+            accept_multiple_files=True,
+            key="sample_uploads",
+        )
+
+        if sample_photo and st.button("Add camera sample", use_container_width=True, key="add_camera_sample"):
+            add_sample(sample_photo)
+
+        if extra_uploads and st.button("Add uploaded samples", use_container_width=True, key="add_uploaded_samples"):
+            st.session_state.samples.extend(extra_uploads)
+            st.success(f"Added {len(extra_uploads)} uploaded sample(s).")
+
+        if st.session_state.samples:
+            st.write(f"Captured samples: {len(st.session_state.samples)}")
+            st.image([sample.getvalue() for sample in st.session_state.samples], width=120)
+            if st.button("Clear samples", use_container_width=True, key="clear_samples"):
+                clear_samples()
+                st.experimental_rerun()
+
+        st.metric("Current access", "Full access" if st.session_state.viewer_role in ADMIN_ROLES else "Filtered access")
+        st.caption("Tip: leave Logo Path empty if you do not have a company logo file.")
+
+    if st.session_state.attendance_mode:
         st.divider()
+        st.subheader("Attendance")
+        location_payload = render_location_capture("attendance")
+
+        if isinstance(location_payload, dict):
+            if location_payload.get("status") == "success":
+                st.caption(
+                    "Location ready: "
+                    f"{float(location_payload.get('lat')):.6f}, "
+                    f"{float(location_payload.get('lon')):.6f}"
+                )
+            elif location_payload.get("status") == "error":
+                st.caption(f"Location not captured: {location_payload.get('message', 'Permission denied.')}")
+            elif location_payload.get("status") == "unsupported":
+                st.caption("This browser does not support GPS capture.")
+
+        if CV2_AVAILABLE:
+            attendance_photo = st.camera_input("Capture attendance photo", key="attendance_camera")
+            uploaded_attendance = st.file_uploader(
+                "Or upload attendance photo",
+                type=["png", "jpg", "jpeg"],
+                accept_multiple_files=False,
+                key="attendance_upload",
+            )
+
+            if attendance_photo and st.button("Use camera photo", use_container_width=True, key="use_camera_photo"):
+                set_attendance_image(attendance_photo)
+
+            if uploaded_attendance and st.button("Use uploaded photo", use_container_width=True, key="use_uploaded_photo"):
+                set_attendance_image(uploaded_attendance)
+
+            if st.session_state.attendance_image is not None:
+                st.image(st.session_state.attendance_image, width=220)
+                if st.button("Mark Attendance", type="primary", use_container_width=True, key="mark_attendance"):
+                    try:
+                        raw = st.session_state.attendance_image.getvalue()
+                        name, confidence = recognize_from_bytes(raw)
+                        if name == "unknown":
+                            st.warning(f"Face not recognized. Confidence: {confidence:.1f}")
+                        else:
+                            today_file = ATTENDANCE_DIR / f"attendance_{datetime.now().strftime('%Y%m%d')}.csv"
+                            today_file.parent.mkdir(parents=True, exist_ok=True)
+                            if not today_file.exists():
+                                with today_file.open("w", newline="", encoding="utf-8") as f:
+                                    writer = csv.writer(f)
+                                    writer.writerow(ATTENDANCE_COLUMNS)
+                            location_name, lat, lon = attendance_location_fields(location_payload)
+                            message, marked = mark_attendance(name, today_file, location_name, lat, lon)
+                            st.session_state.status = "Attendance marked" if marked else "Attendance blocked"
+                            st.success(message)
+                            log(f"Attendance: {message}")
+                            clear_attendance()
+                    except Exception as exc:
+                        st.session_state.status = "Attendance failed"
+                        st.error(str(exc))
+        else:
+            employees = load_employees()
+            employee_names = sorted({row.get("Name", "").strip() for row in employees if row.get("Name", "").strip()})
+            if employee_names:
+                selected_name = st.selectbox("Select employee", employee_names, key="manual_attendance_name")
+                if st.button("Mark Attendance Manually", type="primary", use_container_width=True, key="manual_mark_attendance"):
+                    try:
+                        today_file = ATTENDANCE_DIR / f"attendance_{datetime.now().strftime('%Y%m%d')}.csv"
+                        today_file.parent.mkdir(parents=True, exist_ok=True)
+                        if not today_file.exists():
+                            with today_file.open("w", newline="", encoding="utf-8") as f:
+                                writer = csv.writer(f)
+                                writer.writerow(ATTENDANCE_COLUMNS)
+                        message, marked = mark_attendance(selected_name, today_file)
+                        st.session_state.status = "Attendance marked" if marked else "Attendance blocked"
+                        st.success(message)
+                        log(f"Attendance: {message}")
+                    except Exception as exc:
+                        st.session_state.status = "Attendance failed"
+                        st.error(str(exc))
+            else:
+                st.info("Add employees first to use manual attendance mode.")
+        if st.button("Close Attendance", use_container_width=True, key="close_attendance"):
+            st.session_state.attendance_mode = False
+            st.experimental_rerun()
 
 
-def attendance_location_fields(location_payload):
-    if not isinstance(location_payload, dict):
-        return "Unknown", "", ""
-    if location_payload.get("status") != "success":
-        return "Unknown", "", ""
-    lat = location_payload.get("lat")
-    lon = location_payload.get("lon")
-    accuracy = location_payload.get("accuracy")
-    label = "Browser GPS"
-    if accuracy not in (None, ""):
-        label = f"{label} (+/- {float(accuracy):.0f} m)"
-    lat_value = f"{float(lat):.6f}" if lat not in (None, "") else ""
-    lon_value = f"{float(lon):.6f}" if lon not in (None, "") else ""
-    return label, lat_value, lon_value
+def main():
+    tab_register, tab_dashboard, tab_activity = st.tabs(["Register", "Dashboard", "Activity"])
+
+    with tab_register:
+        render_register_tab()
+    with tab_dashboard:
+        render_dashboard_tab()
+    with tab_activity:
+        render_activity_tab()
 
 
 st.set_page_config(page_title=APP_TITLE, page_icon="camera", layout="wide")
 ensure_state()
 
-st.title("Attendance Web App")
-st.caption("Open this link on mobile or desktop. No install needed.")
+st.title("Vickhardth Automation - Employee Access Portal")
+st.caption("FACE RECOGNITION ATTENDANCE WITH ROLE-AWARE EMPLOYEE ACCESS")
 if CV2_AVAILABLE:
     st.info(
         "For browser camera access on a public link, the site should run over HTTPS. "
@@ -348,7 +564,7 @@ with st.sidebar:
     st.write(f"Root: `{ROOT_DIR}`")
     st.write("Use the same link for everyone once deployed.")
     if st.button("Refresh dashboard", use_container_width=True):
-        st.rerun()
+        st.experimental_rerun()
     st.divider()
     st.write("Camera mode")
     st.session_state.camera_mode = st.selectbox(
@@ -360,156 +576,4 @@ with st.sidebar:
     if not CV2_AVAILABLE:
         st.caption("Camera mode is kept for future compatibility, but recognition is manual in this deployment.")
 
-render_stats()
-
-col_backend, col_camera = st.columns([1, 1])
-
-with col_backend:
-    st.subheader("Train and data")
-    if st.button(
-        "Train Model",
-        type="primary",
-        use_container_width=True,
-        disabled=not CV2_AVAILABLE,
-        help="OpenCV is required for model training on this app host.",
-    ):
-        try:
-            train_faces()
-            st.session_state.status = "Model trained"
-            st.success("Model trained successfully.")
-        except Exception as exc:
-            st.session_state.status = "Train failed"
-            st.error(str(exc))
-    if not CV2_AVAILABLE:
-        st.caption("Training is disabled in Streamlit Cloud simple mode.")
-
-    st.subheader("Register employee")
-    name = st.text_input("Name", key="employee_name")
-    mobile = st.text_input("Mobile", key="employee_mobile")
-    employee_id = st.text_input("Employee ID", key="employee_id")
-    role = st.selectbox("Role", ROLES, key="employee_role")
-    company_name = st.text_input("Company name", value=DEFAULT_COMPANY_NAME, key="company_name")
-    logo_path = st.text_input("Logo path optional", value="", key="logo_path")
-    sample_photo = st.camera_input("Capture sample photo", key="sample_camera")
-    extra_uploads = st.file_uploader(
-        "Or add more sample photos",
-        type=["png", "jpg", "jpeg"],
-        accept_multiple_files=True,
-        key="sample_uploads",
-    )
-
-    if sample_photo and st.button("Add camera sample", use_container_width=True, key="add_camera_sample"):
-        add_sample(sample_photo)
-
-    if extra_uploads and st.button("Add uploaded samples", use_container_width=True, key="add_uploaded_samples"):
-        st.session_state.samples.extend(extra_uploads)
-        st.success(f"Added {len(extra_uploads)} uploaded sample(s).")
-
-    if st.session_state.samples:
-        st.write(f"Captured samples: {len(st.session_state.samples)}")
-        st.image([sample.getvalue() for sample in st.session_state.samples], width=120)
-        if st.button("Clear samples", use_container_width=True, key="clear_samples"):
-            clear_samples()
-            st.rerun()
-
-    if st.button("Register employee", type="primary", use_container_width=True, key="register_employee"):
-        try:
-            saved = register_employee(
-                name,
-                mobile,
-                employee_id,
-                role,
-                company_name,
-                logo_path,
-                st.session_state.samples,
-            )
-            st.session_state.status = "Employee registered"
-            st.success(f"Registered employee and saved {saved} sample(s).")
-            clear_samples()
-        except Exception as exc:
-            st.session_state.status = "Register failed"
-            st.error(str(exc))
-
-with col_camera:
-    st.subheader("Mark attendance")
-    location_payload = render_location_capture("attendance")
-    if isinstance(location_payload, dict):
-        if location_payload.get("status") == "success":
-            st.caption(
-                "Location ready: "
-                f"{float(location_payload.get('lat')):.6f}, "
-                f"{float(location_payload.get('lon')):.6f}"
-            )
-        elif location_payload.get("status") == "error":
-            st.caption(f"Location not captured: {location_payload.get('message', 'Permission denied.')}")
-        elif location_payload.get("status") == "unsupported":
-            st.caption("This browser does not support GPS capture.")
-
-    if CV2_AVAILABLE:
-        attendance_photo = st.camera_input("Capture attendance photo", key="attendance_camera")
-        uploaded_attendance = st.file_uploader(
-            "Or upload attendance photo",
-            type=["png", "jpg", "jpeg"],
-            accept_multiple_files=False,
-            key="attendance_upload",
-        )
-
-        if attendance_photo and st.button("Use camera photo", use_container_width=True, key="use_camera_photo"):
-            set_attendance_image(attendance_photo)
-
-        if uploaded_attendance and st.button("Use uploaded photo", use_container_width=True, key="use_uploaded_photo"):
-            set_attendance_image(uploaded_attendance)
-
-        if st.session_state.attendance_image is not None:
-            st.image(st.session_state.attendance_image, width=220)
-            if st.button("Mark Attendance", type="primary", use_container_width=True, key="mark_attendance"):
-                try:
-                    raw = st.session_state.attendance_image.getvalue()
-                    name, confidence = recognize_from_bytes(raw)
-                    if name == "unknown":
-                        st.warning(f"Face not recognized. Confidence: {confidence:.1f}")
-                    else:
-                        today_file = ATTENDANCE_DIR / f"attendance_{datetime.now().strftime('%Y%m%d')}.csv"
-                        today_file.parent.mkdir(parents=True, exist_ok=True)
-                        if not today_file.exists():
-                            with today_file.open("w", newline="", encoding="utf-8") as f:
-                                writer = csv.writer(f)
-                                writer.writerow(ATTENDANCE_COLUMNS)
-                        location_name, lat, lon = attendance_location_fields(location_payload)
-                        message, marked = mark_attendance(name, today_file, location_name, lat, lon)
-                        st.session_state.status = "Attendance marked" if marked else "Attendance blocked"
-                        st.success(message)
-                        clear_attendance()
-                except Exception as exc:
-                    st.session_state.status = "Attendance failed"
-                    st.error(str(exc))
-    else:
-        employees = load_employees()
-        employee_names = sorted({row.get("Name", "").strip() for row in employees if row.get("Name", "").strip()})
-        if employee_names:
-            selected_name = st.selectbox("Select employee", employee_names, key="manual_attendance_name")
-            if st.button("Mark Attendance Manually", type="primary", use_container_width=True, key="manual_mark_attendance"):
-                try:
-                    today_file = ATTENDANCE_DIR / f"attendance_{datetime.now().strftime('%Y%m%d')}.csv"
-                    today_file.parent.mkdir(parents=True, exist_ok=True)
-                    if not today_file.exists():
-                        with today_file.open("w", newline="", encoding="utf-8") as f:
-                            writer = csv.writer(f)
-                            writer.writerow(ATTENDANCE_COLUMNS)
-                    message, marked = mark_attendance(selected_name, today_file)
-                    st.session_state.status = "Attendance marked" if marked else "Attendance blocked"
-                    st.success(message)
-                except Exception as exc:
-                    st.session_state.status = "Attendance failed"
-                    st.error(str(exc))
-        else:
-            st.info("Add employees first to use manual attendance mode.")
-
-st.divider()
-left, right = st.columns(2)
-with left:
-    st.subheader("Employees")
-    render_employee_list()
-with right:
-    st.subheader("Attendance")
-    render_attendance_list()
+main()
