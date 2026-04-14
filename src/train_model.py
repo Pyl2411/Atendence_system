@@ -76,8 +76,6 @@ def train_faces():
     with LABELS_FILE.open("w", encoding="utf-8") as f:
         json.dump(label_map, f, indent=2)
 
-    print(f"Model saved to {MODEL_FILE}")
-    print(f"Labels saved to {LABELS_FILE}")
     return MODEL_FILE, LABELS_FILE
 
 
@@ -111,16 +109,11 @@ def load_training_data():
             person_images.append(preprocess_face(img))
 
         if len(person_images) < MIN_IMAGES_PER_PERSON:
-            print(
-                f"Skipping '{person_dir.name}': only {len(person_images)} images "
-                f"(need at least {MIN_IMAGES_PER_PERSON})."
-            )
             continue
 
         label_map[current_label] = label_display_name(person_dir.name, employee_lookup)
         images.extend(person_images)
         labels.extend([current_label] * len(person_images))
-        print(f"Included '{person_dir.name}' with {len(person_images)} images.")
         current_label += 1
 
     return images, np.array(labels), label_map

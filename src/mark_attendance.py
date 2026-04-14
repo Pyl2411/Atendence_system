@@ -168,8 +168,6 @@ def start_attendance():
     if not cap.isOpened():
         raise RuntimeError("Could not open camera.")
 
-    print("Press 'q' to quit.")
-
     try:
         while True:
             ret, frame = cap.read()
@@ -267,7 +265,6 @@ def mark_attendance(name, file_path, location=None, lat=None, lon=None):
             row["CheckOutLon"] = lon
             row["WorkHours"] = f"{worked.total_seconds() / 3600:.2f}"
             write_rows(file_path, rows)
-            print(f"OUT marked: {name} at {now_time} | Location: {location} ({lat}, {lon})")
             return f"{name}: OUT at {now_time} | {location}", True
 
     rows.append(
@@ -286,7 +283,6 @@ def mark_attendance(name, file_path, location=None, lat=None, lon=None):
         }
     )
     write_rows(file_path, rows)
-    print(f"IN marked: {name} at {now_time} | Location: {location} ({lat}, {lon})")
     return f"{name}: IN at {now_time} | {location}", True
 
 

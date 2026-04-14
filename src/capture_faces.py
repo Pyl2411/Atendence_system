@@ -155,7 +155,6 @@ def capture_employee(
     person_dir = ROOT_DIR / "data" / folder_name
     person_dir.mkdir(parents=True, exist_ok=True)
     upsert_employee(name, mobile, employee_id, role, company_name, logo_path)
-    print(f"Capturing for: {name} ({mobile})")
 
     face_cascade = cv2.CascadeClassifier(
         cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
@@ -166,7 +165,6 @@ def capture_employee(
         raise RuntimeError("Could not open camera. Check webcam permissions/index.")
 
     count = 0
-    print("Press 'q' to quit early.")
 
     try:
         while count < samples:
@@ -203,9 +201,6 @@ def capture_employee(
         cv2.destroyAllWindows()
 
     append_capture_log(name, mobile, folder_name, count)
-    print(f"Saved {count} samples to {person_dir}")
-    print("Employee list CSV: data/employees.csv")
-    print("Capture log CSV: data/capture_log.csv")
     return count
 
 

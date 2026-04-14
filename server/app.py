@@ -959,11 +959,10 @@ def main():
         scheme = "https"
     else:
         scheme = "http"
-    print(f"Serving attendance app on {scheme}://0.0.0.0:{port}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nStopping server...")
+        pass
     finally:
         server.server_close()
 

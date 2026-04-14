@@ -1,7 +1,5 @@
 numpy
+opencv-python
 requests
-fastapi
-uvicorn[standard]
-python-multipart
 streamlit
 Pillow

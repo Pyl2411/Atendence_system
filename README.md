@@ -1,53 +1,93 @@
-# Face Recognition Attendance System
+# Daily Attendance System - Face Recognition Web App
 
-This project now works as a browser-based app so everyone can use it from mobile or desktop with one link.
-It can also capture the employee device's browser GPS location during attendance when the user allows location permission.
+A modern web-based attendance management system using face recognition technology. The app opens the camera immediately upon loading, functioning like a biometric attendance machine.
+
+## Features
+
+- 📷 **Immediate Camera Access**: Camera opens automatically when the app loads
+- 👥 **Role-Based Access**: Different permissions for Managers, Employees, etc.
+- 📊 **Daily Presence Tracking**: Real-time attendance statistics
+- 🔒 **Secure Face Recognition**: OpenCV-based facial recognition
+- 📱 **Mobile Friendly**: Works on phones and desktops
+- 🗺️ **Location Tracking**: Optional GPS location capture
 
 ## Quick Start
 
-This repo already contains a working Python 3.11 build cache in `.build311` and `.build_lib`.
-Use that environment instead of the broken `.venv`:
+### Prerequisites
+- Python 3.8+
+- Webcam/Camera access
 
-```powershell
-cd "C:\attendence system"
-.\start_app.ps1
+### Installation
+
+1. Clone or download the project
+2. Install dependencies:
+```bash
+pip install -r requirements.txt
 ```
 
-Open it in a browser:
+### Running the App
 
-- Same PC: `http://127.0.0.1:8000/`
-- Phone on same Wi-Fi: `http://<your-pc-lan-ip>:8000/`
-
-## How to use
-
-1. Open the browser link.
-2. Enter the employee details.
-3. Capture a face sample or use the phone camera fallback.
-4. Register the employee.
-5. Train the model.
-6. Capture a face photo and mark attendance.
-
-## Project Folders
-
-See [PROJECT_STRUCTURE.md](./PROJECT_STRUCTURE.md) for the folder layout.
-
-## Browser App
-
-The main app lives in [server/app.py](./server/app.py). It serves:
-- the web page
-- the JSON API
-- the camera upload routes
-
-## Streamlit App
-
-If you want a Streamlit version for deployment, run:
-
+#### For Development
 ```powershell
-cd "C:\attendence system"
 .\start_streamlit.ps1
 ```
 
-The Streamlit app is in [streamlit_app.py](./streamlit_app.py) and the Streamlit Cloud entrypoint is [app.py](./app.py).
+#### For Production Deployment
+```bash
+streamlit run streamlit_app.py --server.port 8501 --server.address 0.0.0.0
+```
+
+Open `http://localhost:8501` in your browser.
+
+## How to Use
+
+1. **Select Your Role**: Choose your role from the dropdown (Manager/Co Founder see all records)
+2. **Camera Access**: The camera will open automatically
+3. **Mark Attendance**: Position your face and click "Mark Attendance"
+4. **View Records**: See your attendance history based on your role permissions
+
+## User Roles
+
+- **Manager/Co Founder**: Full access to all employee records and statistics
+- **Employee/Team Leader/Trainee**: Access to personal attendance records only
+
+## Project Structure
+
+- `streamlit_app.py` - Main web application
+- `src/` - Core functionality modules
+- `data/` - Employee data and face samples
+- `models/` - Trained face recognition models
+- `attendance/` - Daily attendance CSV files
+
+## Deployment
+
+The app is ready for deployment on:
+- Streamlit Cloud
+- Heroku
+- AWS/GCP/Azure
+- Local servers
+
+For production deployment, ensure:
+- HTTPS enabled for camera access
+- Sufficient storage for face data
+- Regular backups of attendance records
+
+## Security Notes
+
+- Face recognition requires camera permissions
+- Location data is optional and stored locally
+- All data is stored in CSV files (consider database for production)
+- No external APIs required for basic functionality
+
+## Troubleshooting
+
+- **Camera not working**: Ensure HTTPS in production, check browser permissions
+- **Face not recognized**: Retrain the model with better lighting/samples
+- **No records showing**: Check role permissions and data files
+
+---
+
+© 2024 Vickhardth Automation - Secure Attendance System
 For a public hosted app, Streamlit is often the simplest path because it gives you a shareable link and a built-in browser UI.
 If the host does not provide OpenCV, the app still starts in simple mode so the link works, and you can mark attendance manually from the browser.
 Streamlit Cloud should use the cloud-safe [requirements.txt](./requirements.txt). If you want the OpenCV desktop path on your PC, use [requirements-desktop.txt](./requirements-desktop.txt).
